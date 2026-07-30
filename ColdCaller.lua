@@ -172,8 +172,10 @@ local function FinishRefresh()
     whoPending = false
     ColdCallerCharDB.results = results
     UpdateResultsDisplay()
-    if UI.refreshBtn then UI.refreshBtn:Enable() end
-    if UI.continueBtn then UI.continueBtn:Hide() end
+    if UI.refreshBtn then
+        UI.refreshBtn:Enable()
+        UI.refreshBtn:SetText("Refresh /who")
+    end
     if UI.status then UI.status:SetText(("Done -- %d player(s) found."):format(#results)) end
 end
 
@@ -185,24 +187,24 @@ local AfterQueryComplete, UpdateContinueWait, SendNextQueued
 -- calling C_FriendList.SendWho (or even firing the Who window's own edit box
 -- OnEnterPressed) from a C_Timer.After callback updates nothing and never
 -- contacts the server. So instead of auto-chaining queries on a timer, we
--- wait out WHO_INTERVAL and then require the player to click Continue --
--- SendNextQueued only ever runs synchronously from an OnClick handler.
+-- wait out WHO_INTERVAL and then let the player click "Refresh /who" again
+-- (repurposed as "Continue" while a search is running) -- SendNextQueued only
+-- ever runs synchronously from that OnClick handler.
 UpdateContinueWait = function(gen)
     if not refreshing or gen ~= refreshGen then return end
     local remaining = WHO_INTERVAL - (GetTime() - lastWhoSent)
-    if UI.continueBtn then UI.continueBtn:Show() end
     if remaining <= 0 then
-        if UI.continueBtn then
-            UI.continueBtn:Enable()
-            UI.continueBtn:SetText(("Continue (%d left)"):format(#whoQueue))
+        if UI.refreshBtn then
+            UI.refreshBtn:Enable()
+            UI.refreshBtn:SetText(("Continue (%d left)"):format(#whoQueue))
         end
         if UI.status then
             UI.status:SetText(("Ready -- click Continue (%d left)."):format(#whoQueue))
         end
     else
-        if UI.continueBtn then
-            UI.continueBtn:Disable()
-            UI.continueBtn:SetText(("Wait %.0fs..."):format(remaining))
+        if UI.refreshBtn then
+            UI.refreshBtn:Disable()
+            UI.refreshBtn:SetText(("Wait %.0fs..."):format(remaining))
         end
         if UI.status then
             UI.status:SetText(("Waiting %.0fs before next query (%d left)..."):format(remaining, #whoQueue))
@@ -231,7 +233,10 @@ SendNextQueued = function()
     whoPending = true
     pendingGen = refreshGen
     lastWhoSent = GetTime()
-    if UI.continueBtn then UI.continueBtn:Hide() end
+    if UI.refreshBtn then
+        UI.refreshBtn:Disable()
+        UI.refreshBtn:SetText("Refresh /who")
+    end
     if UI.status then
         UI.status:SetText(("Searching... (%d query(s) left)"):format(#whoQueue))
     end
@@ -249,7 +254,22 @@ SendNextQueued = function()
     end)
 end
 
-local function StartRefresh()
+-- Single button does double duty: starts a fresh search when idle, or -- once
+-- WHO_INTERVAL has elapsed mid-search -- sends the next queued query. Reusing
+-- it (rather than a second button) sidesteps needing new layout space, and it
+-- can never be clicked while a query is actually in flight since it's
+-- disabled for that whole window.
+local StartRefresh -- forward declaration, used by RefreshButtonClicked below
+
+local function RefreshButtonClicked()
+    if refreshing then
+        SendNextQueued()
+    else
+        StartRefresh()
+    end
+end
+
+StartRefresh = function()
     -- Starting a new search interrupts any in-progress one instead of being
     -- ignored. refreshGen invalidates callbacks (WHO_LIST_UPDATE, the
     -- WHO_TIMEOUT fallback) still in flight for the old search.
@@ -284,7 +304,6 @@ local function StartRefresh()
     refreshing = true
     whoPending = false
     if UI.refreshBtn then UI.refreshBtn:Disable() end
-    if UI.continueBtn then UI.continueBtn:Hide() end
     if UI.status then UI.status:SetText("Searching...") end
     SendNextQueued() -- safe: always called synchronously from a real click
 end
@@ -517,7 +536,7 @@ local function BuildUI()
     UI.refreshBtn:SetSize(120, 24)
     UI.refreshBtn:SetPoint("TOPLEFT", left, afterClassesY - 84)
     UI.refreshBtn:SetText("Refresh /who")
-    UI.refreshBtn:SetScript("OnClick", StartRefresh)
+    UI.refreshBtn:SetScript("OnClick", RefreshButtonClicked)
 
     local clearBtn = CreateFrame("Button", nil, f, "UIPanelButtonTemplate")
     clearBtn:SetSize(90, 24)
@@ -538,16 +557,6 @@ local function BuildUI()
         ColdCallerDB.hideMessaged = self:GetChecked() and true or false
         UpdateResultsDisplay()
     end)
-
-    -- shown only mid-search, once WHO_INTERVAL has elapsed since the last
-    -- query -- clicking it is what actually lets the next /who go out (see
-    -- SendNextQueued: /who requires a real click to submit).
-    UI.continueBtn = CreateFrame("Button", nil, f, "UIPanelButtonTemplate")
-    UI.continueBtn:SetSize(150, 24)
-    UI.continueBtn:SetPoint("BOTTOMLEFT", left, 44)
-    UI.continueBtn:SetText("Continue")
-    UI.continueBtn:SetScript("OnClick", SendNextQueued)
-    UI.continueBtn:Hide()
 
     -- results scroll frame
     local listTop = afterClassesY - 118
