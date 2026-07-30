@@ -1,0 +1,9 @@
+## Interface: 11509
+## Title: Cold Caller
+## Notes: Cold-call players via /who to fill dungeon groups. Whisper them and track who you've contacted. (Classic Era / Hardcore)
+## Author: You
+## Version: 1.0
+## SavedVariables: ColdCallerDB
+## SavedVariablesPerCharacter: ColdCallerCharDB
+
+ColdCaller.lua
