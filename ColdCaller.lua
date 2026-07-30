@@ -167,15 +167,35 @@ end
 -- forward declaration
 local UpdateResultsDisplay
 
+-- Keeps the button disabled with a countdown for the remainder of
+-- WHO_INTERVAL after a search finishes, instead of re-enabling it right
+-- away. Clicking Refresh again before that real throttle window has passed
+-- can't actually search (see TrySend) -- it would just start a wait and
+-- force a second click once ready. Arming it here means whenever the button
+-- *is* clickable, one click reliably fires the search immediately.
+local function ArmRefreshButton(gen)
+    if gen ~= refreshGen or refreshing then return end
+    local remaining = WHO_INTERVAL - (GetTime() - lastWhoSent)
+    if remaining <= 0 then
+        if UI.refreshBtn then
+            UI.refreshBtn:Enable()
+            UI.refreshBtn:SetText("Refresh /who")
+        end
+    else
+        if UI.refreshBtn then
+            UI.refreshBtn:Disable()
+            UI.refreshBtn:SetText(("Ready in %.0fs"):format(remaining))
+        end
+        C_Timer.After(0.5, function() ArmRefreshButton(gen) end)
+    end
+end
+
 local function FinishRefresh()
     refreshing = false
     whoPending = false
     ColdCallerCharDB.results = results
     UpdateResultsDisplay()
-    if UI.refreshBtn then
-        UI.refreshBtn:Enable()
-        UI.refreshBtn:SetText("Refresh /who")
-    end
+    ArmRefreshButton(refreshGen)
     if UI.status then UI.status:SetText(("Done -- %d player(s) found."):format(#results)) end
 end
 
