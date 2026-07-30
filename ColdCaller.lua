@@ -21,9 +21,12 @@ local whoQueue = {}         -- pending /who filter strings
 local whoPending = false    -- waiting on a WHO_LIST_UPDATE for the last query
 local lastWhoSent = 0
 local refreshing = false
+local refreshGen = 0        -- bumped each StartRefresh so stale callbacks from an
+                             -- interrupted search can recognize they're obsolete
+local pendingGen = 0        -- generation the in-flight query belongs to
 
-local WHO_INTERVAL = 2.0    -- seconds between /who queries (client throttles these)
-local WHO_TIMEOUT  = 6.0    -- give up on a query if no response arrives
+local WHO_INTERVAL = 5.0    -- seconds between /who queries (client throttles these)
+local WHO_TIMEOUT  = 8.0    -- give up on a query if no response arrives
 
 local ROW_HEIGHT = 26
 local NUM_ROWS   = 10
@@ -112,7 +115,22 @@ local function DoSendWho(filter)
     if C_FriendList and C_FriendList.SetWhoToUI then
         C_FriendList.SetWhoToUI(true)
     end
-    if C_FriendList and C_FriendList.SendWho then
+
+    -- /who silently refuses to submit unless it's driven by a real click/key
+    -- event -- calling C_FriendList.SendWho (or even firing the Who edit
+    -- box's OnEnterPressed) from a timer callback sets the UI text but never
+    -- actually queries the server. So DoSendWho must only ever be called
+    -- synchronously from an OnClick handler; drive the Who window's own edit
+    -- box the same way a player typing in it and hitting Enter would.
+    local editBox = _G["WhoFrameEditBox"]
+    local onEnterPressed = editBox and editBox:GetScript("OnEnterPressed")
+    if editBox and onEnterPressed then
+        editBox:SetFocus()
+        editBox:SetText(filter)
+        onEnterPressed(editBox)
+    elseif SlashCmdList and SlashCmdList["WHO"] then
+        SlashCmdList["WHO"](filter)
+    elseif C_FriendList and C_FriendList.SendWho then
         if Enum and Enum.SocialWhoOrigin then
             C_FriendList.SendWho(filter, Enum.SocialWhoOrigin.Chat)
         else
@@ -155,26 +173,65 @@ local function FinishRefresh()
     ColdCallerCharDB.results = results
     UpdateResultsDisplay()
     if UI.refreshBtn then UI.refreshBtn:Enable() end
+    if UI.continueBtn then UI.continueBtn:Hide() end
     if UI.status then UI.status:SetText(("Done -- %d player(s) found."):format(#results)) end
 end
 
-local ProcessQueue -- forward
-ProcessQueue = function()
+-- forward declarations: AfterQueryComplete, UpdateContinueWait, and
+-- SendNextQueued are mutually referential.
+local AfterQueryComplete, UpdateContinueWait, SendNextQueued
+
+-- /who silently ignores any query not triggered by a real click/key event --
+-- calling C_FriendList.SendWho (or even firing the Who window's own edit box
+-- OnEnterPressed) from a C_Timer.After callback updates nothing and never
+-- contacts the server. So instead of auto-chaining queries on a timer, we
+-- wait out WHO_INTERVAL and then require the player to click Continue --
+-- SendNextQueued only ever runs synchronously from an OnClick handler.
+UpdateContinueWait = function(gen)
+    if not refreshing or gen ~= refreshGen then return end
+    local remaining = WHO_INTERVAL - (GetTime() - lastWhoSent)
+    if UI.continueBtn then UI.continueBtn:Show() end
+    if remaining <= 0 then
+        if UI.continueBtn then
+            UI.continueBtn:Enable()
+            UI.continueBtn:SetText(("Continue (%d left)"):format(#whoQueue))
+        end
+        if UI.status then
+            UI.status:SetText(("Ready -- click Continue (%d left)."):format(#whoQueue))
+        end
+    else
+        if UI.continueBtn then
+            UI.continueBtn:Disable()
+            UI.continueBtn:SetText(("Wait %.0fs..."):format(remaining))
+        end
+        if UI.status then
+            UI.status:SetText(("Waiting %.0fs before next query (%d left)..."):format(remaining, #whoQueue))
+        end
+        C_Timer.After(0.5, function() UpdateContinueWait(gen) end)
+    end
+end
+
+AfterQueryComplete = function()
+    if not refreshing then return end
+    if #whoQueue == 0 then
+        FinishRefresh()
+        return
+    end
+    UpdateContinueWait(refreshGen)
+end
+
+SendNextQueued = function()
     if not refreshing then return end
     if whoPending then return end
     if #whoQueue == 0 then
         FinishRefresh()
         return
     end
-    local now = GetTime()
-    local wait = WHO_INTERVAL - (now - lastWhoSent)
-    if wait > 0 then
-        C_Timer.After(wait, ProcessQueue)
-        return
-    end
     local filter = table.remove(whoQueue, 1)
     whoPending = true
+    pendingGen = refreshGen
     lastWhoSent = GetTime()
+    if UI.continueBtn then UI.continueBtn:Hide() end
     if UI.status then
         UI.status:SetText(("Searching... (%d query(s) left)"):format(#whoQueue))
     end
@@ -182,17 +239,22 @@ ProcessQueue = function()
 
     -- fallback in case WHO_LIST_UPDATE never fires for this query
     local stamp = lastWhoSent
+    local gen = refreshGen
     C_Timer.After(WHO_TIMEOUT, function()
-        if whoPending and lastWhoSent == stamp then
+        if whoPending and lastWhoSent == stamp and refreshGen == gen then
             CollectWhoResults()
             whoPending = false
-            ProcessQueue()
+            AfterQueryComplete()
         end
     end)
 end
 
 local function StartRefresh()
-    if refreshing then return end
+    -- Starting a new search interrupts any in-progress one instead of being
+    -- ignored. refreshGen invalidates callbacks (WHO_LIST_UPDATE, the
+    -- WHO_TIMEOUT fallback) still in flight for the old search.
+    refreshGen = refreshGen + 1
+    whoPending = false
 
     -- pull the latest field values into the DB before searching
     UI.SaveInputs()
@@ -222,7 +284,9 @@ local function StartRefresh()
     refreshing = true
     whoPending = false
     if UI.refreshBtn then UI.refreshBtn:Disable() end
-    ProcessQueue()
+    if UI.continueBtn then UI.continueBtn:Hide() end
+    if UI.status then UI.status:SetText("Searching...") end
+    SendNextQueued() -- safe: always called synchronously from a real click
 end
 
 --------------------------------------------------------------------------
@@ -475,6 +539,16 @@ local function BuildUI()
         UpdateResultsDisplay()
     end)
 
+    -- shown only mid-search, once WHO_INTERVAL has elapsed since the last
+    -- query -- clicking it is what actually lets the next /who go out (see
+    -- SendNextQueued: /who requires a real click to submit).
+    UI.continueBtn = CreateFrame("Button", nil, f, "UIPanelButtonTemplate")
+    UI.continueBtn:SetSize(150, 24)
+    UI.continueBtn:SetPoint("BOTTOMLEFT", left, 44)
+    UI.continueBtn:SetText("Continue")
+    UI.continueBtn:SetScript("OnClick", SendNextQueued)
+    UI.continueBtn:Hide()
+
     -- results scroll frame
     local listTop = afterClassesY - 118
     local scroll = CreateFrame("ScrollFrame", "ColdCallerScroll", f, "FauxScrollFrameTemplate")
@@ -557,10 +631,10 @@ driver:SetScript("OnEvent", function(self, event, arg1)
         BuildUI()
         self:UnregisterEvent("ADDON_LOADED")
     elseif event == "WHO_LIST_UPDATE" then
-        if refreshing and whoPending then
+        if refreshing and whoPending and pendingGen == refreshGen then
             CollectWhoResults()
             whoPending = false
-            ProcessQueue()
+            AfterQueryComplete()
         end
     end
 end)
