@@ -35,7 +35,7 @@ local UI = {}               -- frame references
 --------------------------------------------------------------------------
 local function MaxLevel()
     -- Classic Era / Hardcore is capped at 60
-    return MAX_PLAYER_LEVEL or 60
+    return 60
 end
 
 -- Classic (Vanilla) has 9 classes. We build the list from the API when
@@ -49,12 +49,14 @@ local function BuildClasses()
     wipe(CLASSES)
     wipe(nameToToken)
     if GetNumClasses and GetClassInfo then
+        local seenTokens = {}
         local num = GetNumClasses() or 0
         for i = 1, num do
             local name, token = GetClassInfo(i)
-            if name and token then
+            if name and token and not seenTokens[token] then
                 CLASSES[#CLASSES + 1] = { token = token, name = name }
                 nameToToken[name] = token
+                seenTokens[token] = true
             end
         end
     end
@@ -227,6 +229,7 @@ end
 -- Whispering
 --------------------------------------------------------------------------
 local function WhisperPlayer(entry)
+    UI.SaveInputs()
     if not entry or not entry.name then return end
     local msg = ColdCallerDB.message
     if not msg or strtrim(msg) == "" then
