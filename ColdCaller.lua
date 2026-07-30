@@ -179,9 +179,9 @@ local function FinishRefresh()
     if UI.status then UI.status:SetText(("Done -- %d player(s) found."):format(#results)) end
 end
 
--- forward declarations: AfterQueryComplete, UpdateContinueWait, and
--- SendNextQueued are mutually referential.
-local AfterQueryComplete, UpdateContinueWait, SendNextQueued
+-- forward declarations: AfterQueryComplete, UpdateContinueWait, SendNextQueued
+-- and TrySend are mutually referential.
+local AfterQueryComplete, UpdateContinueWait, SendNextQueued, TrySend
 
 -- /who silently ignores any query not triggered by a real click/key event --
 -- calling C_FriendList.SendWho (or even firing the Who window's own edit box
@@ -220,6 +220,28 @@ AfterQueryComplete = function()
         return
     end
     UpdateContinueWait(refreshGen)
+end
+
+-- Gatekeeps every actual send behind two independent requirements: it must
+-- come from a real click (guaranteed by only ever being called from
+-- RefreshButtonClicked), AND at least WHO_INTERVAL must have really elapsed
+-- since the last one -- Blizzard's server-side /who throttle still applies
+-- even to a genuinely-clicked query, so re-clicking Refresh right after a
+-- batch just finished can otherwise silently drop the first query of the new
+-- batch exactly like an unthrottled timer resend would.
+TrySend = function()
+    if not refreshing then return end
+    if whoPending then return end
+    if #whoQueue == 0 then
+        FinishRefresh()
+        return
+    end
+    local remaining = WHO_INTERVAL - (GetTime() - lastWhoSent)
+    if remaining > 0 then
+        UpdateContinueWait(refreshGen)
+        return
+    end
+    SendNextQueued()
 end
 
 SendNextQueued = function()
@@ -263,7 +285,7 @@ local StartRefresh -- forward declaration, used by RefreshButtonClicked below
 
 local function RefreshButtonClicked()
     if refreshing then
-        SendNextQueued()
+        TrySend()
     else
         StartRefresh()
     end
@@ -305,7 +327,8 @@ StartRefresh = function()
     whoPending = false
     if UI.refreshBtn then UI.refreshBtn:Disable() end
     if UI.status then UI.status:SetText("Searching...") end
-    SendNextQueued() -- safe: always called synchronously from a real click
+    TrySend() -- checks WHO_INTERVAL too: a click right after a prior batch
+              -- finished can still be too soon for Blizzard's real throttle
 end
 
 --------------------------------------------------------------------------
