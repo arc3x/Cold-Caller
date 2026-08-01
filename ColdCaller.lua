@@ -219,11 +219,7 @@ local function FinishIfQueueEmpty()
     return true
 end
 
--- forward declarations: AfterQueryComplete, SendNextQueued and TrySend are
--- mutually referential.
-local AfterQueryComplete, SendNextQueued, TrySend
-
-AfterQueryComplete = function()
+local function AfterQueryComplete()
     if not refreshing then return end
     if FinishIfQueueEmpty() then return end
     WaitThenArm(refreshGen)
@@ -238,27 +234,10 @@ local function HandleQueryResult()
     AfterQueryComplete()
 end
 
--- Gatekeeps every actual send behind two independent requirements: it must
--- come from a real click (guaranteed by only ever being called from
--- RefreshButtonClicked), AND at least WHO_INTERVAL must have really elapsed
--- since the last one -- Blizzard's server-side /who throttle still applies
--- even to a genuinely-clicked query, so re-clicking Refresh right after a
--- batch just finished can otherwise silently drop the first query of the new
--- batch exactly like an unthrottled timer resend would.
-TrySend = function()
-    if not refreshing or whoPending then return end
-    if FinishIfQueueEmpty() then return end
-    if TimeUntilReady() > 0 then
-        WaitThenArm(refreshGen)
-        return
-    end
-    SendNextQueued()
-end
-
-SendNextQueued = function()
-    if not refreshing or whoPending then return end
-    if FinishIfQueueEmpty() then return end
-
+-- Pops and sends the next queued query. Only ever called from TrySend below,
+-- once it's already confirmed refreshing/whoPending/the queue/the interval
+-- are all in the right state -- no need to re-check any of that here.
+local function SendNextQueued()
     local filter = table.remove(whoQueue, 1)
     whoPending = true
     pendingGen = refreshGen
@@ -275,6 +254,23 @@ SendNextQueued = function()
             HandleQueryResult()
         end
     end)
+end
+
+-- Gatekeeps every actual send behind two independent requirements: it must
+-- come from a real click (guaranteed by only ever being called from
+-- RefreshButtonClicked), AND at least WHO_INTERVAL must have really elapsed
+-- since the last one -- Blizzard's server-side /who throttle still applies
+-- even to a genuinely-clicked query, so re-clicking Refresh right after a
+-- batch just finished can otherwise silently drop the first query of the new
+-- batch exactly like an unthrottled timer resend would.
+local function TrySend()
+    if not refreshing or whoPending then return end
+    if FinishIfQueueEmpty() then return end
+    if TimeUntilReady() > 0 then
+        WaitThenArm(refreshGen)
+        return
+    end
+    SendNextQueued()
 end
 
 -- Single button does double duty: starts a fresh search when idle, or -- once
@@ -325,7 +321,6 @@ StartRefresh = function()
     end
 
     refreshing = true
-    whoPending = false
     SetRefreshButton(false)
     SetStatus("Searching...")
     TrySend() -- checks WHO_INTERVAL too: a click right after a prior batch
@@ -340,7 +335,7 @@ local function WhisperPlayer(entry)
     if not entry or not entry.name then return end
     local msg = ColdCallerDB.message
     if not msg or strtrim(msg) == "" then
-        if UI.status then UI.status:SetText("Type a message first.") end
+        SetStatus("Type a message first.")
         return
     end
     SendChatMessage(msg, "WHISPER", nil, entry.name)
@@ -415,7 +410,7 @@ StaticPopupDialogs["COLDCALLER_CLEAR"] = {
         wipe(ColdCallerCharDB.messaged)
         ColdCallerCharDB.results = {}
         UpdateResultsDisplay()
-        if UI.status then UI.status:SetText("Cleared.") end
+        SetStatus("Cleared.")
     end,
     timeout = 0,
     whileDead = true,
@@ -555,17 +550,20 @@ local function BuildUI()
         ColdCallerDB.message  = UI.msgBox:GetText() or ""
     end
 
+    local function MakeButton(parent, width, height, text)
+        local b = CreateFrame("Button", nil, parent, "UIPanelButtonTemplate")
+        b:SetSize(width, height)
+        b:SetText(text)
+        return b
+    end
+
     -- buttons
-    UI.refreshBtn = CreateFrame("Button", nil, f, "UIPanelButtonTemplate")
-    UI.refreshBtn:SetSize(120, 24)
+    UI.refreshBtn = MakeButton(f, 120, 24, "Refresh /who")
     UI.refreshBtn:SetPoint("TOPLEFT", left, afterClassesY - 84)
-    UI.refreshBtn:SetText("Refresh /who")
     UI.refreshBtn:SetScript("OnClick", RefreshButtonClicked)
 
-    local clearBtn = CreateFrame("Button", nil, f, "UIPanelButtonTemplate")
-    clearBtn:SetSize(90, 24)
+    local clearBtn = MakeButton(f, 90, 24, "Clear")
     clearBtn:SetPoint("LEFT", UI.refreshBtn, "RIGHT", 8, 0)
-    clearBtn:SetText("Clear")
     clearBtn:SetScript("OnClick", function()
         StaticPopup_Show("COLDCALLER_CLEAR")
     end)
@@ -623,10 +621,8 @@ local function BuildUI()
         info:SetWordWrap(false)
         row.info = info
 
-        local wb = CreateFrame("Button", nil, row, "UIPanelButtonTemplate")
-        wb:SetSize(78, ROW_HEIGHT - 4)
+        local wb = MakeButton(row, 78, ROW_HEIGHT - 4, "Whisper")
         wb:SetPoint("RIGHT", row, "RIGHT", -2, 0)
-        wb:SetText("Whisper")
         wb:SetScript("OnClick", function()
             if row.entry then WhisperPlayer(row.entry) end
         end)
