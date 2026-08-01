@@ -41,8 +41,7 @@ local function MaxLevel()
     return 60
 end
 
--- Classic (Vanilla) has 9 classes. We build the list from the API when
--- available, and fall back to this fixed list otherwise.
+-- Classic (Vanilla) classes
 local CLASSIC_CLASS_TOKENS = {
     "WARRIOR", "PALADIN", "HUNTER", "ROGUE", "PRIEST",
     "SHAMAN", "MAGE", "WARLOCK", "DRUID",
@@ -51,26 +50,11 @@ local CLASSIC_CLASS_TOKENS = {
 local function BuildClasses()
     wipe(CLASSES)
     wipe(nameToToken)
-    if GetNumClasses and GetClassInfo then
-        local seenTokens = {}
-        local num = GetNumClasses() or 0
-        for i = 1, num do
-            local name, token = GetClassInfo(i)
-            if name and token and not seenTokens[token] then
-                CLASSES[#CLASSES + 1] = { token = token, name = name }
-                nameToToken[name] = token
-                seenTokens[token] = true
-            end
-        end
-    end
-    if #CLASSES == 0 then
-        -- fallback: fixed Classic list, localized where possible
-        local L = LOCALIZED_CLASS_NAMES_MALE or {}
-        for _, token in ipairs(CLASSIC_CLASS_TOKENS) do
-            local name = L[token] or token
-            CLASSES[#CLASSES + 1] = { token = token, name = name }
-            nameToToken[name] = token
-        end
+    local L = LOCALIZED_CLASS_NAMES_MALE or {}
+    for _, token in ipairs(CLASSIC_CLASS_TOKENS) do
+        local name = L[token] or token
+        CLASSES[#CLASSES + 1] = { token = token, name = name }
+        nameToToken[name] = token
     end
 end
 
