@@ -275,6 +275,7 @@ SendNextQueued = function()
         if whoPending and lastWhoSent == stamp and refreshGen == gen then
             CollectWhoResults()
             whoPending = false
+            UpdateResultsDisplay()
             AfterQueryComplete()
         end
     end)
@@ -670,6 +671,7 @@ driver:SetScript("OnEvent", function(self, event, arg1)
         if refreshing and whoPending and pendingGen == refreshGen then
             CollectWhoResults()
             whoPending = false
+            UpdateResultsDisplay()
             AfterQueryComplete()
         end
     end
