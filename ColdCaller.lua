@@ -151,27 +151,55 @@ end
 -- forward declaration
 local UpdateResultsDisplay
 
--- Keeps the button disabled with a countdown for the remainder of
--- WHO_INTERVAL after a search finishes, instead of re-enabling it right
--- away. Clicking Refresh again before that real throttle window has passed
--- can't actually search (see TrySend) -- it would just start a wait and
--- force a second click once ready. Arming it here means whenever the button
--- *is* clickable, one click reliably fires the search immediately.
-local function ArmRefreshButton(gen)
-    if gen ~= refreshGen or refreshing then return end
-    local remaining = WHO_INTERVAL - (GetTime() - lastWhoSent)
+--------------------------------------------------------------------------
+-- Small UI setters, shared by the state machine below
+--------------------------------------------------------------------------
+local function SetStatus(text)
+    if UI.status then UI.status:SetText(text) end
+end
+
+local function SetRefreshButton(enabled, text)
+    if not UI.refreshBtn then return end
+    if enabled then UI.refreshBtn:Enable() else UI.refreshBtn:Disable() end
+    if text then UI.refreshBtn:SetText(text) end
+end
+
+local function TimeUntilReady()
+    return WHO_INTERVAL - (GetTime() - lastWhoSent)
+end
+
+-- /who silently ignores any query not triggered by a real click/key event --
+-- calling C_FriendList.SendWho (or even firing the Who window's own edit box
+-- OnEnterPressed) from a C_Timer.After callback updates nothing and never
+-- contacts the server. So instead of auto-chaining queries on a timer, we
+-- wait out WHO_INTERVAL and require an actual click on "Refresh /who"
+-- (repurposed as "Continue" mid-search) to send each query.
+--
+-- WaitThenArm polls until that real time has elapsed and then arms the
+-- button for the next click -- used both right after a batch finishes (idle,
+-- readying a fresh search) and mid-batch (readying the next queued query).
+-- Whenever the button *is* clickable, one click reliably fires immediately;
+-- clicking too soon just isn't possible, so there's no dead click that only
+-- starts a wait.
+local function WaitThenArm(gen)
+    if gen ~= refreshGen then return end
+    local remaining = TimeUntilReady()
     if remaining <= 0 then
-        if UI.refreshBtn then
-            UI.refreshBtn:Enable()
-            UI.refreshBtn:SetText("Refresh /who")
+        if refreshing then
+            SetRefreshButton(true, ("Continue (%d left)"):format(#whoQueue))
+            SetStatus(("Ready -- click Continue (%d left)."):format(#whoQueue))
+        else
+            SetRefreshButton(true, "Refresh /who")
         end
-    else
-        if UI.refreshBtn then
-            UI.refreshBtn:Disable()
-            UI.refreshBtn:SetText(("Ready in %.0fs"):format(remaining))
-        end
-        C_Timer.After(0.5, function() ArmRefreshButton(gen) end)
+        return
     end
+    if refreshing then
+        SetRefreshButton(false, ("Wait %.0fs..."):format(remaining))
+        SetStatus(("Waiting %.0fs before next query (%d left)..."):format(remaining, #whoQueue))
+    else
+        SetRefreshButton(false, ("Ready in %.0fs"):format(remaining))
+    end
+    C_Timer.After(0.5, function() WaitThenArm(gen) end)
 end
 
 local function FinishRefresh()
@@ -179,51 +207,35 @@ local function FinishRefresh()
     whoPending = false
     ColdCallerCharDB.results = results
     UpdateResultsDisplay()
-    ArmRefreshButton(refreshGen)
-    if UI.status then UI.status:SetText(("Done -- %d player(s) found."):format(#results)) end
+    WaitThenArm(refreshGen)
+    SetStatus(("Done -- %d player(s) found."):format(#results))
 end
 
--- forward declarations: AfterQueryComplete, UpdateContinueWait, SendNextQueued
--- and TrySend are mutually referential.
-local AfterQueryComplete, UpdateContinueWait, SendNextQueued, TrySend
-
--- /who silently ignores any query not triggered by a real click/key event --
--- calling C_FriendList.SendWho (or even firing the Who window's own edit box
--- OnEnterPressed) from a C_Timer.After callback updates nothing and never
--- contacts the server. So instead of auto-chaining queries on a timer, we
--- wait out WHO_INTERVAL and then let the player click "Refresh /who" again
--- (repurposed as "Continue" while a search is running) -- SendNextQueued only
--- ever runs synchronously from that OnClick handler.
-UpdateContinueWait = function(gen)
-    if not refreshing or gen ~= refreshGen then return end
-    local remaining = WHO_INTERVAL - (GetTime() - lastWhoSent)
-    if remaining <= 0 then
-        if UI.refreshBtn then
-            UI.refreshBtn:Enable()
-            UI.refreshBtn:SetText(("Continue (%d left)"):format(#whoQueue))
-        end
-        if UI.status then
-            UI.status:SetText(("Ready -- click Continue (%d left)."):format(#whoQueue))
-        end
-    else
-        if UI.refreshBtn then
-            UI.refreshBtn:Disable()
-            UI.refreshBtn:SetText(("Wait %.0fs..."):format(remaining))
-        end
-        if UI.status then
-            UI.status:SetText(("Waiting %.0fs before next query (%d left)..."):format(remaining, #whoQueue))
-        end
-        C_Timer.After(0.5, function() UpdateContinueWait(gen) end)
-    end
+-- True (and queue left alone) if there's a query left to send; otherwise
+-- finishes the batch and returns false.
+local function FinishIfQueueEmpty()
+    if #whoQueue > 0 then return false end
+    FinishRefresh()
+    return true
 end
+
+-- forward declarations: AfterQueryComplete, SendNextQueued and TrySend are
+-- mutually referential.
+local AfterQueryComplete, SendNextQueued, TrySend
 
 AfterQueryComplete = function()
     if not refreshing then return end
-    if #whoQueue == 0 then
-        FinishRefresh()
-        return
-    end
-    UpdateContinueWait(refreshGen)
+    if FinishIfQueueEmpty() then return end
+    WaitThenArm(refreshGen)
+end
+
+-- Called whenever a query's response comes in, whether via a real
+-- WHO_LIST_UPDATE or the WHO_TIMEOUT fallback giving up on one.
+local function HandleQueryResult()
+    CollectWhoResults()
+    whoPending = false
+    UpdateResultsDisplay()
+    AfterQueryComplete()
 end
 
 -- Gatekeeps every actual send behind two independent requirements: it must
@@ -234,38 +246,25 @@ end
 -- batch just finished can otherwise silently drop the first query of the new
 -- batch exactly like an unthrottled timer resend would.
 TrySend = function()
-    if not refreshing then return end
-    if whoPending then return end
-    if #whoQueue == 0 then
-        FinishRefresh()
-        return
-    end
-    local remaining = WHO_INTERVAL - (GetTime() - lastWhoSent)
-    if remaining > 0 then
-        UpdateContinueWait(refreshGen)
+    if not refreshing or whoPending then return end
+    if FinishIfQueueEmpty() then return end
+    if TimeUntilReady() > 0 then
+        WaitThenArm(refreshGen)
         return
     end
     SendNextQueued()
 end
 
 SendNextQueued = function()
-    if not refreshing then return end
-    if whoPending then return end
-    if #whoQueue == 0 then
-        FinishRefresh()
-        return
-    end
+    if not refreshing or whoPending then return end
+    if FinishIfQueueEmpty() then return end
+
     local filter = table.remove(whoQueue, 1)
     whoPending = true
     pendingGen = refreshGen
     lastWhoSent = GetTime()
-    if UI.refreshBtn then
-        UI.refreshBtn:Disable()
-        UI.refreshBtn:SetText("Refresh /who")
-    end
-    if UI.status then
-        UI.status:SetText(("Searching... (%d query(s) left)"):format(#whoQueue))
-    end
+    SetRefreshButton(false, "Refresh /who")
+    SetStatus(("Searching... (%d query(s) left)"):format(#whoQueue))
     DoSendWho(filter)
 
     -- fallback in case WHO_LIST_UPDATE never fires for this query
@@ -273,10 +272,7 @@ SendNextQueued = function()
     local gen = refreshGen
     C_Timer.After(WHO_TIMEOUT, function()
         if whoPending and lastWhoSent == stamp and refreshGen == gen then
-            CollectWhoResults()
-            whoPending = false
-            UpdateResultsDisplay()
-            AfterQueryComplete()
+            HandleQueryResult()
         end
     end)
 end
@@ -330,8 +326,8 @@ StartRefresh = function()
 
     refreshing = true
     whoPending = false
-    if UI.refreshBtn then UI.refreshBtn:Disable() end
-    if UI.status then UI.status:SetText("Searching...") end
+    SetRefreshButton(false)
+    SetStatus("Searching...")
     TrySend() -- checks WHO_INTERVAL too: a click right after a prior batch
               -- finished can still be too soon for Blizzard's real throttle
 end
@@ -669,10 +665,7 @@ driver:SetScript("OnEvent", function(self, event, arg1)
         self:UnregisterEvent("ADDON_LOADED")
     elseif event == "WHO_LIST_UPDATE" then
         if refreshing and whoPending and pendingGen == refreshGen then
-            CollectWhoResults()
-            whoPending = false
-            UpdateResultsDisplay()
-            AfterQueryComplete()
+            HandleQueryResult()
         end
     end
 end)
