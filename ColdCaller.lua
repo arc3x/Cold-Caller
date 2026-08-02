@@ -675,7 +675,10 @@ end
 -- Minimap button
 --------------------------------------------------------------------------
 local function PositionMinimapButton(button)
-    local angle = math.rad(ColdCallerDB.minimapAngle or 220)
+    -- WoW's global cos()/sin() take degrees, not radians -- the angle is
+    -- already in degrees (see the atan2 -> math.deg conversion in the drag
+    -- handler below), so it goes in as-is.
+    local angle = ColdCallerDB.minimapAngle or 220
     local radius = 80
     button:ClearAllPoints()
     button:SetPoint("CENTER", Minimap, "CENTER", radius * cos(angle), radius * sin(angle))
