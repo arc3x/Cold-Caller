@@ -5,8 +5,8 @@
 
 .DESCRIPTION
     * Reads files from the current directory (or -SourceDir).
-    * Detects the addon name from the .toc file (used for the output
-      filename only -- the zip has no wrapper folder, files sit at its root).
+    * Detects the addon name from the .toc file, so the zip contains the
+      required top-level "AddonName/" folder that WoW and CurseForge expect.
     * Skips .git, .github, build output, editor folders, and other junk.
     * Writes  build\AddonName.zip
     * Re-opens the finished zip and confirms no .git slipped in.
@@ -116,8 +116,7 @@ foreach ($f in $included) {
     Copy-Item -LiteralPath $f.FullName -Destination $dest -Force
 }
 
-# --- zip it (includeBaseDirectory = false -> files sit at the zip root, no
-#     wrapper "AddonName/" folder inside) -------------------------------------
+# --- zip it (includeBaseDirectory = true -> "AddonName/" sits at the root) ---
 $buildDir = Join-Path $SourceDir 'build'
 New-Item -ItemType Directory -Force -Path $buildDir | Out-Null
 $zipPath = Join-Path $buildDir ("{0}.zip" -f $AddonName)
@@ -130,7 +129,7 @@ if (-not ([System.Management.Automation.PSTypeName]'System.IO.Compression.ZipFil
     $stageAddon,
     $zipPath,
     [System.IO.Compression.CompressionLevel]::Optimal,
-    $false
+    $true
 )
 
 Remove-Item -LiteralPath $stageRoot -Recurse -Force
@@ -149,7 +148,7 @@ finally {
 Write-Host ""
 Write-Host ("Packaged {0} file(s)" -f $included.Count) -ForegroundColor Green
 Write-Host ("Output        : {0}" -f $zipPath)          -ForegroundColor Green
-Write-Host "Layout        : files at zip root (no wrapper folder)" -ForegroundColor Green
+Write-Host ("Top folder    : {0}/" -f $AddonName)       -ForegroundColor Green
 
 if ($gitHits) {
     Write-Host "WARNING: .git entries are STILL in the zip:" -ForegroundColor Red
