@@ -428,7 +428,7 @@ local function BuildUI()
     -- free (portrait region, header art, title text, close button) instead
     -- of hand-placing a masked icon + ring border ourselves.
     local f = CreateFrame("Frame", "ColdCallerFrame", UIParent, "PortraitFrameTemplate")
-    f:SetSize(440, 650)
+    f:SetSize(440, 630)
     f:SetFrameStrata("MEDIUM")
     f:SetToplevel(true)
     f:SetClampedToScreen(true)
