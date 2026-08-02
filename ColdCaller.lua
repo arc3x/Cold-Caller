@@ -44,8 +44,7 @@ end
 
 -- Classic (Vanilla) classes
 local CLASSIC_CLASS_TOKENS = {
-    "WARRIOR", "PALADIN", "HUNTER", "ROGUE", "PRIEST",
-    "SHAMAN", "MAGE", "WARLOCK", "DRUID",
+    "WARRIOR", "HUNTER", "DRUID", "ROGUE", "PALADIN", "MAGE", "PRIEST", "WARLOCK", "SHAMAN",
 }
 
 local function BuildClasses()
