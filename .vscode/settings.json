@@ -27,5 +27,6 @@
         "StaticPopup_Show",
         "FauxScrollFrame_OnVerticalScroll",
         "GameTooltip_Hide"
-    ]
+    ],
+    "Lua.type.weakUnionCheck": true
 }
