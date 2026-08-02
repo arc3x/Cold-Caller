@@ -66,6 +66,7 @@ local function InitDB()
     if db.maxLevel == nil then db.maxLevel = MaxLevel() end
     if db.message  == nil then db.message  = "Hi! Putting together a group for a dungeon run -- interested?" end
     if db.hideMessaged == nil then db.hideMessaged = false end
+    if db.minimapAngle == nil then db.minimapAngle = 220 end
 
     ColdCallerCharDB = ColdCallerCharDB or {}
     local cdb = ColdCallerCharDB
@@ -643,6 +644,73 @@ local function BuildUI()
 end
 
 --------------------------------------------------------------------------
+-- Toggle helper (slash command + minimap button both use this)
+--------------------------------------------------------------------------
+local function ToggleMainFrame()
+    local f = _G["ColdCallerFrame"]
+    if not f then return end
+    if f:IsShown() then f:Hide() else f:Show() end
+end
+
+--------------------------------------------------------------------------
+-- Minimap button
+--------------------------------------------------------------------------
+local function PositionMinimapButton(button)
+    local angle = math.rad(ColdCallerDB.minimapAngle or 220)
+    local radius = 80
+    button:ClearAllPoints()
+    button:SetPoint("CENTER", Minimap, "CENTER", radius * cos(angle), radius * sin(angle))
+end
+
+local function CreateMinimapButton()
+    if not Minimap then return end
+
+    local button = CreateFrame("Button", "ColdCallerMinimapButton", Minimap)
+    button:SetSize(31, 31)
+    button:SetFrameStrata("MEDIUM")
+    button:SetFrameLevel(8)
+    button:RegisterForClicks("LeftButtonUp")
+    button:RegisterForDrag("LeftButton")
+
+    local icon = button:CreateTexture(nil, "BACKGROUND")
+    icon:SetTexture("Interface\\AddOns\\ColdCaller\\cold-caller-icon-sm.png")
+    icon:SetSize(17, 17)
+    icon:SetPoint("TOPLEFT", 7, -6)
+
+    local border = button:CreateTexture(nil, "OVERLAY")
+    border:SetTexture("Interface\\Minimap\\MiniMap-TrackingBorder")
+    border:SetSize(53, 53)
+    border:SetPoint("TOPLEFT")
+
+    button:SetScript("OnClick", ToggleMainFrame)
+
+    button:SetScript("OnEnter", function(self)
+        GameTooltip:SetOwner(self, "ANCHOR_LEFT")
+        GameTooltip:SetText("Cold Caller")
+        GameTooltip:AddLine("Click to toggle the window.", 1, 1, 1)
+        GameTooltip:AddLine("Drag to move.", 0.7, 0.7, 0.7)
+        GameTooltip:Show()
+    end)
+    button:SetScript("OnLeave", function() GameTooltip:Hide() end)
+
+    button:SetScript("OnDragStart", function(self)
+        self:SetScript("OnUpdate", function(btn)
+            local mx, my = Minimap:GetCenter()
+            local px, py = GetCursorPosition()
+            local scale = Minimap:GetEffectiveScale()
+            px, py = px / scale, py / scale
+            ColdCallerDB.minimapAngle = math.deg(math.atan2(py - my, px - mx))
+            PositionMinimapButton(btn)
+        end)
+    end)
+    button:SetScript("OnDragStop", function(self)
+        self:SetScript("OnUpdate", nil)
+    end)
+
+    PositionMinimapButton(button)
+end
+
+--------------------------------------------------------------------------
 -- Events & slash command
 --------------------------------------------------------------------------
 local driver = CreateFrame("Frame")
@@ -653,6 +721,7 @@ driver:SetScript("OnEvent", function(self, event, arg1)
         InitDB()
         BuildClasses()
         BuildUI()
+        CreateMinimapButton()
         self:UnregisterEvent("ADDON_LOADED")
     elseif event == "WHO_LIST_UPDATE" then
         if refreshing and whoPending then
@@ -664,8 +733,4 @@ end)
 SLASH_COLDCALLER1 = "/coldcall"
 SLASH_COLDCALLER2 = "/coldcaller"
 SLASH_COLDCALLER3 = "/cc"
-SlashCmdList["COLDCALLER"] = function()
-    local f = _G["ColdCallerFrame"]
-    if not f then return end
-    if f:IsShown() then f:Hide() else f:Show() end
-end
+SlashCmdList["COLDCALLER"] = ToggleMainFrame

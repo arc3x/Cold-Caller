@@ -25,6 +25,7 @@
         "RAID_CLASS_COLORS",
         "LOCALIZED_CLASS_NAMES_MALE",
         "StaticPopup_Show",
-        "FauxScrollFrame_OnVerticalScroll"
+        "FauxScrollFrame_OnVerticalScroll",
+        "GameTooltip_Hide"
     ]
 }
