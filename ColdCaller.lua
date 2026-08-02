@@ -480,7 +480,7 @@ local function BuildUI()
     -- class section label
     local classLbl = f:CreateFontString(nil, "OVERLAY", "GameFontNormal")
     classLbl:SetPoint("TOPLEFT", left, anchorY)
-    classLbl:SetText("Classes (none ticked = all):")
+    classLbl:SetText("Classes (none ticked = all)")
 
     -- class checkboxes, 2 columns
     UI.classChecks = {}
@@ -530,7 +530,7 @@ local function BuildUI()
     UI.minBox:SetText(tostring(ColdCallerDB.minLevel))
 
     local toLbl = f:CreateFontString(nil, "OVERLAY", "GameFontNormal")
-    toLbl:SetPoint("LEFT", UI.minBox, "RIGHT", 8, 0)
+    toLbl:SetPoint("LEFT", UI.minBox, "RIGHT", 5, 0)
     toLbl:SetText("to")
 
     UI.maxBox = MakeNumberBox()
@@ -540,7 +540,7 @@ local function BuildUI()
     -- message
     local msgLbl = f:CreateFontString(nil, "OVERLAY", "GameFontNormal")
     msgLbl:SetPoint("TOPLEFT", left, afterClassesY - 34)
-    msgLbl:SetText("Whisper message:")
+    msgLbl:SetText("Whisper message")
 
     UI.msgBox = CreateFrame("EditBox", nil, f, "InputBoxTemplate")
     UI.msgBox:SetSize(400, 22)
