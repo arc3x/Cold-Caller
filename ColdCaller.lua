@@ -436,6 +436,24 @@ local function BuildUI()
     f.portrait:SetTexture("Interface\\AddOns\\ColdCaller\\cold-caller-icon-sm.png")
     f.TitleText:SetText("Cold Caller")
 
+    -- Strip the template's opaque parchment/stone fill so the panel reads as
+    -- transparent, while leaving the portrait ring, header shape, and border
+    -- art alone. Blizzard's dialog templates put the flat background fill on
+    -- the BACKGROUND draw layer and the decorative pieces on ARTWORK/OVERLAY,
+    -- so this only ever touches the fill regardless of the template's exact
+    -- internal region names.
+    for _, region in ipairs({ f:GetRegions() }) do
+        if region.GetObjectType and region:GetObjectType() == "Texture" and region:GetDrawLayer() == "BACKGROUND" then
+            region:SetTexture(nil)
+        end
+    end
+
+    -- a faint dark tint in place of the stripped fill -- still see-through,
+    -- just enough to make the content easier to read over busy scenery
+    local tint = f:CreateTexture(nil, "BACKGROUND")
+    tint:SetAllPoints(f)
+    tint:SetColorTexture(0, 0, 0, 0.5)
+
     -- position
     local p = ColdCallerDB.point
     if p then
@@ -633,6 +651,7 @@ local function BuildUI()
     UI.status:SetPoint("TOPLEFT", listBg, "BOTTOMLEFT", 4, -10)
     UI.status:SetPoint("RIGHT", f, "RIGHT", -20, 0)
     UI.status:SetJustifyH("LEFT")
+    UI.status:SetTextColor(0.75, 0.75, 0.75) -- a touch brighter than the default disabled-gray
     UI.status:SetText("Pick classes + levels, set a message, then Refresh /who.")
 
     -- persist field edits when the window is closed
