@@ -408,6 +408,25 @@ StaticPopupDialogs["COLDCALLER_CLEAR"] = {
     button1 = YES,
     button2 = NO,
     OnAccept = function()
+        -- Abort any in-progress/waiting search too -- otherwise the
+        -- Refresh/Continue button and queue are left in a stale mid-batch
+        -- state, and the next click would resume searching the classes from
+        -- before Clear was pressed instead of starting fresh.
+        --
+        -- Emptying whoQueue is always safe. Resetting refreshing and
+        -- re-enabling the button immediately is only safe when whoPending is
+        -- already false (no query actually in flight) -- that's exactly the
+        -- "sitting on Continue, didn't click it" case this is for. If a
+        -- query genuinely is in flight, leave refreshing/the button alone:
+        -- the queue is now empty, so when that query's response comes in,
+        -- the normal FinishIfQueueEmpty check ends the batch and re-arms the
+        -- button on its own, with no need to track or ignore a stale response.
+        wipe(whoQueue)
+        if not whoPending then
+            refreshing = false
+            SetRefreshButton(true, "Refresh /who")
+        end
+
         wipe(results); wipe(resultsByName); wipe(filtered)
         wipe(ColdCallerCharDB.messaged)
         ColdCallerCharDB.results = {}
