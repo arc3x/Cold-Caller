@@ -27,7 +27,7 @@ local refreshGen = 0        -- bumped each StartRefresh; WaitThenArm's polling l
                              -- checks this to stop if a new search has started
 
 local WHO_INTERVAL = 5.0    -- seconds between /who queries (client throttles these)
-local WHO_TIMEOUT  = 8.0    -- give up on a query if no response arrives
+local WHO_TIMEOUT  = 2.0    -- give up on a query if no response arrives
 
 local ROW_HEIGHT = 26
 local NUM_ROWS   = 10
