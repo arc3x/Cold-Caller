@@ -18,12 +18,13 @@ local resultsByName = {}    -- set for de-duplication
 local filtered = {}         -- results after the "hide messaged" filter
 
 local whoQueue = {}         -- pending /who filter strings
-local whoPending = false    -- waiting on a WHO_LIST_UPDATE for the last query
+local whoPending = false    -- waiting on a response to the currently in-flight query --
+                             -- the Refresh/Continue button is disabled for the button's
+                             -- entire life, so at most one query is ever in flight
 local lastWhoSent = 0
 local refreshing = false
-local refreshGen = 0        -- bumped each StartRefresh so stale callbacks from an
-                             -- interrupted search can recognize they're obsolete
-local pendingGen = 0        -- generation the in-flight query belongs to
+local refreshGen = 0        -- bumped each StartRefresh; WaitThenArm's polling loop
+                             -- checks this to stop if a new search has started
 
 local WHO_INTERVAL = 5.0    -- seconds between /who queries (client throttles these)
 local WHO_TIMEOUT  = 8.0    -- give up on a query if no response arrives
@@ -211,8 +212,9 @@ local function FinishRefresh()
     SetStatus(("Done -- %d player(s) found."):format(#results))
 end
 
--- True (and queue left alone) if there's a query left to send; otherwise
--- finishes the batch and returns false.
+-- If the queue is empty, finishes the batch and returns true. Otherwise
+-- leaves the queue alone and returns false so the caller can send the next
+-- item.
 local function FinishIfQueueEmpty()
     if #whoQueue > 0 then return false end
     FinishRefresh()
@@ -240,17 +242,17 @@ end
 local function SendNextQueued()
     local filter = table.remove(whoQueue, 1)
     whoPending = true
-    pendingGen = refreshGen
     lastWhoSent = GetTime()
     SetRefreshButton(false, "Refresh /who")
     SetStatus(("Searching... (%d query(s) left)"):format(#whoQueue))
     DoSendWho(filter)
 
-    -- fallback in case WHO_LIST_UPDATE never fires for this query
-    local stamp = lastWhoSent
-    local gen = refreshGen
+    -- Fallback in case WHO_LIST_UPDATE never fires for this query. whoPending
+    -- alone is enough to tell this apart from a later query: the button stays
+    -- disabled for whoPending's entire lifetime, so nothing can send another
+    -- query (and flip whoPending true again) until this one is resolved.
     C_Timer.After(WHO_TIMEOUT, function()
-        if whoPending and lastWhoSent == stamp and refreshGen == gen then
+        if whoPending then
             HandleQueryResult()
         end
     end)
@@ -368,10 +370,10 @@ UpdateResultsDisplay = function()
             if messaged then
                 label = string.format("|cff707070[%s] %s|r", lvl, e.name)
             else
-                local col = RAID_CLASS_COLORS[e.classToken]
-                if col then
+                local classColor = RAID_CLASS_COLORS[e.classToken]
+                if classColor then
                     label = string.format("|cff%02x%02x%02x[%s] %s|r",
-                        col.r * 255, col.g * 255, col.b * 255, lvl, e.name)
+                        classColor.r * 255, classColor.g * 255, classColor.b * 255, lvl, e.name)
                 else
                     label = string.format("[%s] %s", lvl, e.name)
                 end
@@ -484,8 +486,8 @@ local function BuildUI()
         local lbl = cb:CreateFontString(nil, "OVERLAY", "GameFontNormal")
         lbl:SetPoint("LEFT", cb, "RIGHT", 2, 0)
         lbl:SetText(c.name)
-        local col2 = RAID_CLASS_COLORS[c.token]
-        if col2 then lbl:SetTextColor(col2.r, col2.g, col2.b) end
+        local classColor = RAID_CLASS_COLORS[c.token]
+        if classColor then lbl:SetTextColor(classColor.r, classColor.g, classColor.b) end
 
         cb:SetChecked(ColdCallerDB.classes[c.token] and true or false)
         cb:SetScript("OnClick", function(self)
@@ -660,7 +662,7 @@ driver:SetScript("OnEvent", function(self, event, arg1)
         BuildUI()
         self:UnregisterEvent("ADDON_LOADED")
     elseif event == "WHO_LIST_UPDATE" then
-        if refreshing and whoPending and pendingGen == refreshGen then
+        if refreshing and whoPending then
             HandleQueryResult()
         end
     end
