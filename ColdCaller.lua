@@ -424,17 +424,17 @@ StaticPopupDialogs["COLDCALLER_CLEAR"] = {
 -- UI construction
 --------------------------------------------------------------------------
 local function BuildUI()
-    local f = CreateFrame("Frame", "ColdCallerFrame", UIParent, "BackdropTemplate")
+    -- PortraitFrameTemplate gives us the round icon-in-the-corner look for
+    -- free (portrait region, header art, title text, close button) instead
+    -- of hand-placing a masked icon + ring border ourselves.
+    local f = CreateFrame("Frame", "ColdCallerFrame", UIParent, "PortraitFrameTemplate")
     f:SetSize(440, 590)
     f:SetFrameStrata("MEDIUM")
     f:SetToplevel(true)
     f:SetClampedToScreen(true)
-    f:SetBackdrop({
-        bgFile   = "Interface\\DialogFrame\\UI-DialogBox-Background",
-        edgeFile = "Interface\\DialogFrame\\UI-DialogBox-Border",
-        tile = true, tileSize = 32, edgeSize = 32,
-        insets = { left = 11, right = 12, top = 12, bottom = 11 },
-    })
+
+    f.portrait:SetTexture("Interface\\AddOns\\ColdCaller\\cold-caller-icon-sm.png")
+    f.TitleText:SetText("Cold Caller")
 
     -- position
     local p = ColdCallerDB.point
@@ -456,16 +456,8 @@ local function BuildUI()
     f:Hide()
     tinsert(UISpecialFrames, "ColdCallerFrame") -- closes on Escape
 
-    -- title
-    local title = f:CreateFontString(nil, "OVERLAY", "GameFontNormalLarge")
-    title:SetPoint("TOP", 0, -16)
-    title:SetText("Cold Caller")
-
-    local close = CreateFrame("Button", nil, f, "UIPanelCloseButton")
-    close:SetPoint("TOPRIGHT", -6, -6)
-
     local left = 20
-    local anchorY = -44
+    local anchorY = -60 -- lower than before: clears the template's portrait/header art
 
     -- class section label
     local classLbl = f:CreateFontString(nil, "OVERLAY", "GameFontNormal")
