@@ -428,7 +428,7 @@ local function BuildUI()
     -- free (portrait region, header art, title text, close button) instead
     -- of hand-placing a masked icon + ring border ourselves.
     local f = CreateFrame("Frame", "ColdCallerFrame", UIParent, "PortraitFrameTemplate")
-    f:SetSize(440, 590)
+    f:SetSize(440, 650)
     f:SetFrameStrata("MEDIUM")
     f:SetToplevel(true)
     f:SetClampedToScreen(true)
@@ -626,10 +626,12 @@ local function BuildUI()
         UI.rows[i] = row
     end
 
-    -- status line
+    -- status line -- anchored below the list panel itself (not an
+    -- independent offset from the frame's bottom edge) so it can never end up
+    -- overlapping a result row if the list's own geometry changes
     UI.status = f:CreateFontString(nil, "OVERLAY", "GameFontDisableSmall")
-    UI.status:SetPoint("BOTTOMLEFT", left, 18)
-    UI.status:SetPoint("BOTTOMRIGHT", -20, 18)
+    UI.status:SetPoint("TOPLEFT", listBg, "BOTTOMLEFT", 4, -10)
+    UI.status:SetPoint("RIGHT", f, "RIGHT", -20, 0)
     UI.status:SetJustifyH("LEFT")
     UI.status:SetText("Pick classes + levels, set a message, then Refresh /who.")
 
