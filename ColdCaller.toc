@@ -2,7 +2,7 @@
 ## Title: Cold Caller
 ## Notes: Cold-call players via /who to fill dungeon groups. Whisper them and track who you've contacted. (Classic Era / Hardcore)
 ## Author: You
-## Version: 1.0
+## Version: 1.1
 ## IconTexture: Interface\AddOns\ColdCaller\cold-caller-icon-sm.png
 ## SavedVariables: ColdCallerDB
 ## SavedVariablesPerCharacter: ColdCallerCharDB
