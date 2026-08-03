@@ -698,7 +698,7 @@ local function PositionMinimapButton(button)
     -- already in degrees (see the atan2 -> math.deg conversion in the drag
     -- handler below), so it goes in as-is.
     local angle = ColdCallerDB.minimapAngle or 220
-    local radius = 80
+    local radius = (Minimap:GetWidth() / 2) + 5
     button:ClearAllPoints()
     button:SetPoint("CENTER", Minimap, "CENTER", radius * cos(angle), radius * sin(angle))
 end
