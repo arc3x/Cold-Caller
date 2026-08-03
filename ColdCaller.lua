@@ -27,7 +27,7 @@ local refreshGen = 0        -- bumped each StartRefresh; WaitThenArm's polling l
                              -- checks this to stop if a new search has started
 
 local WHO_INTERVAL = 5.0    -- seconds between /who queries (client throttles these)
-local WHO_TIMEOUT  = 8.0    -- give up on a query if no response arrives
+local WHO_TIMEOUT  = 2.0    -- give up on a query if no response arrives
 
 local ROW_HEIGHT = 26
 local NUM_ROWS   = 10
@@ -408,6 +408,25 @@ StaticPopupDialogs["COLDCALLER_CLEAR"] = {
     button1 = YES,
     button2 = NO,
     OnAccept = function()
+        -- Abort any in-progress/waiting search too -- otherwise the
+        -- Refresh/Continue button and queue are left in a stale mid-batch
+        -- state, and the next click would resume searching the classes from
+        -- before Clear was pressed instead of starting fresh.
+        --
+        -- Emptying whoQueue is always safe. Resetting refreshing and
+        -- re-enabling the button immediately is only safe when whoPending is
+        -- already false (no query actually in flight) -- that's exactly the
+        -- "sitting on Continue, didn't click it" case this is for. If a
+        -- query genuinely is in flight, leave refreshing/the button alone:
+        -- the queue is now empty, so when that query's response comes in,
+        -- the normal FinishIfQueueEmpty check ends the batch and re-arms the
+        -- button on its own, with no need to track or ignore a stale response.
+        wipe(whoQueue)
+        if not whoPending then
+            refreshing = false
+            SetRefreshButton(true, "Refresh /who")
+        end
+
         wipe(results); wipe(resultsByName); wipe(filtered)
         wipe(ColdCallerCharDB.messaged)
         ColdCallerCharDB.results = {}
@@ -480,7 +499,7 @@ local function BuildUI()
     -- class section label
     local classLbl = f:CreateFontString(nil, "OVERLAY", "GameFontNormal")
     classLbl:SetPoint("TOPLEFT", left, anchorY)
-    classLbl:SetText("Classes (none ticked = all):")
+    classLbl:SetText("Classes (none ticked = all)")
 
     -- class checkboxes, 2 columns
     UI.classChecks = {}
@@ -530,7 +549,7 @@ local function BuildUI()
     UI.minBox:SetText(tostring(ColdCallerDB.minLevel))
 
     local toLbl = f:CreateFontString(nil, "OVERLAY", "GameFontNormal")
-    toLbl:SetPoint("LEFT", UI.minBox, "RIGHT", 8, 0)
+    toLbl:SetPoint("LEFT", UI.minBox, "RIGHT", 5, 0)
     toLbl:SetText("to")
 
     UI.maxBox = MakeNumberBox()
@@ -540,7 +559,7 @@ local function BuildUI()
     -- message
     local msgLbl = f:CreateFontString(nil, "OVERLAY", "GameFontNormal")
     msgLbl:SetPoint("TOPLEFT", left, afterClassesY - 34)
-    msgLbl:SetText("Whisper message:")
+    msgLbl:SetText("Whisper message")
 
     UI.msgBox = CreateFrame("EditBox", nil, f, "InputBoxTemplate")
     UI.msgBox:SetSize(400, 22)
@@ -679,7 +698,7 @@ local function PositionMinimapButton(button)
     -- already in degrees (see the atan2 -> math.deg conversion in the drag
     -- handler below), so it goes in as-is.
     local angle = ColdCallerDB.minimapAngle or 220
-    local radius = 80
+    local radius = (Minimap:GetWidth() / 2) + 5
     button:ClearAllPoints()
     button:SetPoint("CENTER", Minimap, "CENTER", radius * cos(angle), radius * sin(angle))
 end
